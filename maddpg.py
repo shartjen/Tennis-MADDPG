@@ -2,6 +2,7 @@ import numpy as np
 import progressbar as pb
 from collections import deque
 import time
+import random
 
 from colorama import Back, Style
 import torch
@@ -27,9 +28,11 @@ class maddpg():
             env : environment to be handled
             config : configuration given a variety of parameters
         """
+        
+        
         self.env = env
         self.config = config
-        self.seed = (config['seed'])
+        # self.seed = (config['seed'])
 
         # set parameter for ML
         self.set_parameters(config)
@@ -38,7 +41,8 @@ class maddpg():
         # Q-Network
         self.create_agents(config)
         # load agent
-        # self.load_agent('trained_tennis.pth')
+        if self.load_model:
+            self.load_agent('trained_tennis_2k86.pth')
     
     def set_parameters(self, config):
         # Base agent parameters
@@ -48,6 +52,8 @@ class maddpg():
         self.env_file_name = config['env_file_name']    # name and path for env app
         self.brain_name = config['brain_name']          # name for env brain used in step
         self.train_mode = config['train_mode']
+        self.load_model = config['load_model']
+        self.save_model = config['save_model']
         self.num_agents = config['num_agents']
         self.state_size = config['state_size']
         self.action_size = config['action_size']
@@ -55,10 +61,14 @@ class maddpg():
         self.buffer_size = config['buffer_size']
         self.batch_size = config['batch_size']
         self.learn_every = config['learn_every']
+        self.learn_num = config['learn_num']
         self.critic_learning_rate = config['critic_learning_rate']
         self.actor_learning_rate = config['actor_learning_rate']
         self.noise_decay = config['noise_decay']
         self.seed = (config['seed'])
+        torch.manual_seed(self.seed)
+        np.random.seed(self.seed)
+        random.seed(self.seed)
         self.noise_scale = 1
         self.results = struct_class()
         # Some Debug flags
@@ -159,8 +169,9 @@ class maddpg():
             # Learn, if enough samples are available in memory
             if (i_episode % self.learn_every == 0):
                 if len(self.memory) > self.batch_size:
-                    experiences = self.memory.sample()
-                    self.learn(experiences)
+                    for l in range(self.learn_num):
+                        experiences = self.memory.sample()
+                        self.learn(experiences)
                     
             toc = time.time()
             # keep track of rewards:
@@ -170,9 +181,10 @@ class maddpg():
             # Output Episode info : 
             self.print_episode_info(total_reward,t,tic,toc)
         # for i_episode
-                
-        # self.save_agent()
-        # self.load_agent('trained_tennis.pth')
+        
+        if self.save_model:        
+            filename = 'trained_tennis'+str(self.seed)+'.pth'
+            self.save_agent(filename)
             
         return self.results
     
@@ -185,6 +197,7 @@ class maddpg():
                 if np.sum(total_reward) > 0.15:
                     if np.sum(total_reward) > 0.25:
                         StyleString = Back.GREEN
+                        print('Double Hit')
                     else:
                         StyleString = Back.BLUE
                 else:
@@ -193,7 +206,6 @@ class maddpg():
                 StyleString = ''
             print(StyleString + 'Episode {} with {} steps || Reward : {} || avg reward : {:6.3f} || Noise {:6.3f} || {:5.3f} seconds, mem : {}'.format(self.episode,num_steps,total_reward,np.mean(self.results.reward_window),self.noise_scale,toc-tic,len(self.memory)))
             print(Style.RESET_ALL, end='')                
-            if self.debug_show_memory_summary:self.memory.mem_print_summary()
         
             
     def learn(self, experiences):
@@ -221,8 +233,9 @@ class maddpg():
         self.results.actor_loss.append(actor_loss)
         self.results.critic_loss.append(critic_loss)
 
-    def save_agent(self):
-        filename = 'trained_tennis.pth'
+    def save_agent(self,filename):
+        states, actions, rewards, next_states, dones = self.memory.save_buffer()
+        print('save agent : ',states.shape, actions.shape, rewards.shape, next_states.shape, dones.shape)
         torch.save({
             'critic_local0': self.maddpg_agent[0].critic_local.state_dict(),
             'critic_target0': self.maddpg_agent[0].critic_target.state_dict(),
@@ -232,8 +245,9 @@ class maddpg():
             'critic_target1': self.maddpg_agent[1].critic_target.state_dict(),
             'actor_local1': self.maddpg_agent[1].actor_local.state_dict(),
             'actor_target1': self.maddpg_agent[1].actor_target.state_dict(),
+            'memory': (states, actions, rewards, next_states, dones),
             }, filename)
-        print('Saved Networks in ',filename)
+        print('Saved Networks and ER-memory in ',filename)
         return
         
     def load_agent(self,filename):
@@ -246,4 +260,7 @@ class maddpg():
         self.maddpg_agent[1].critic_target.load_state_dict(savedata['critic_target1'])
         self.maddpg_agent[1].actor_local.load_state_dict(savedata['actor_local1'])
         self.maddpg_agent[1].actor_target.load_state_dict(savedata['actor_target1'])
+        states, actions, rewards, next_states, dones = savedata['memory']
+        self.memory.load_buffer(states, actions, rewards, next_states, dones)
+        print('Memory loaded with length : ',len(self.memory))
         return

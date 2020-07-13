@@ -91,10 +91,12 @@ class ddpg_agent():
         # print('learn : Next States : ',next_states.shape)
         q_next = self.critic_target(next_states, actions_next)
         # Compute Q targets for current states (y_i)
-        q_target = rewards[:,self.id].unsqueeze(1) + (self.gamma * q_next * (1 - dones[:,self.id].unsqueeze(1)))
+        rewards = torch.sum(rewards,1,keepdim=True)
+        # rewards = rewards[:,self.id].unsqueeze(1)
+        q_target =  rewards + (self.gamma * q_next * (1 - dones[:,self.id].unsqueeze(1)))
         # Compute critic loss
         q_expected = self.critic_local(states, actions)
-        # print('Agent learn shapes : ',actions_next.shape, q_next.shape, q_target.shape, q_expected.shape, rewards.shape)
+        # print('Agent learn shapes : ',actions_next.shape, q_next.shape, q_target.shape, q_expected.shape, rewards.shape, sumrewards.shape)
 
         td_error = q_target - q_expected
         # if max_reward > 0.01:
